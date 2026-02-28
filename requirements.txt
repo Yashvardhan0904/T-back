@@ -1,8 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 motor
 pydantic
 pydantic-settings
 groq
 python-dotenv
 httpx
+numpy
