@@ -1,13 +1,55 @@
-# Python
+# ========================
+# Trendora Server .gitignore
+# ========================
+
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
 
-# Virtual env
+# --- Virtual Environments ---
 venv/
+.venv/
+env/
+ENV/
 
-# Env files (SECRETS)
+# --- Environment Variables (SECRETS) ---
 .env
 .env.*
+!.env.example
 
-# Logs
+# --- IDE ---
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+
+# --- Testing ---
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+coverage.xml
+
+# --- Logs & Debug Output ---
 *.log
+*.txt
+!requirements.txt
+!runtime.txt
+*.json
+!package.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Distribution ---
+dist/
+build/
+*.egg-info/
+*.egg
+
+# --- Docker ---
+.dockerignore

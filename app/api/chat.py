@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     userEmail: Optional[str] = None
     chatId: Optional[str] = None
     useIntelligentSearch: bool = True  # Toggle for new AI system
+    useMultiAgentSystem: bool = True  # Toggle for new multi-agent orchestrator
 
 class ChatResponse(BaseModel):
     response: str
@@ -74,6 +75,98 @@ async def _extract_and_save_insights(message: str, history: list, user_id: str, 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
     try:
+        # ============================================================
+        # NEW MULTI-AGENT SYSTEM (Brain Orchestrator)
+        # ============================================================
+        if request.useMultiAgentSystem:
+            try:
+                from app.services.agents.brain_orchestrator import brain_orchestrator
+                
+                logger.info(f"[Chat] Using multi-agent system for user {request.userId}")
+                
+                # Process request through brain orchestrator
+                result = await brain_orchestrator.process_request(
+                    user_input=request.message,
+                    user_id=request.userId,
+                    email=request.userEmail,
+                    chat_id=request.chatId
+                )
+                
+                # Save interactions
+                background_tasks.add_task(
+                    memory_service.save_interaction,
+                    request.userId,
+                    request.userEmail,
+                    "user",
+                    request.message,
+                    result.get("metadata", {}).get("intent_type", "search")
+                )
+                background_tasks.add_task(
+                    memory_service.save_interaction,
+                    request.userId,
+                    request.userEmail,
+                    "assistant",
+                    result.get("response", ""),
+                    result.get("metadata", {}).get("intent_type", "search"),
+                    result.get("products", [])
+                )
+                
+                # Nuclear serialization insurance
+                import json
+                safe_products = json.loads(json.dumps(result.get("products", []), default=str))
+                
+                return ChatResponse(
+                    response=result.get("response", ""),
+                    intent=result.get("metadata", {}).get("intent_type", "search"),
+                    products=safe_products,
+                    products_found=result.get("products_found", 0),
+                    outfits=[],  # Multi-agent system focuses on products
+                    metadata={
+                        **result.get("metadata", {}),
+                        "multi_agent_system": True,
+                        "memory_updated": result.get("memory_update") is not None
+                    }
+                )
+                
+            except Exception as e:
+                logger.error(f"Multi-agent system error, falling back: {e}")
+                import traceback
+                error_trace = traceback.format_exc()
+                logger.error(f"Full error trace: {error_trace}")
+                
+                # Try to provide a graceful response before falling back
+                try:
+                    # Quick intent check for better error message
+                    from app.services.agents.query_agent import query_agent
+                    user_intent = await query_agent.understand_query(request.message)
+                    intent_type = user_intent.get("intent_type", "search")
+                    
+                    if intent_type in ["recommend", "browse"]:
+                        error_response = "Arre, something glitched. But I got you - try asking for something specific like 'sneakers' or 'hoodies' and I'll find you some fire options!"
+                    else:
+                        error_response = "Yo, hit a snag there. Mind trying again with something more specific? Like 'white sneakers' or 'black t-shirt'?"
+                    
+                    return ChatResponse(
+                        response=error_response,
+                        intent=intent_type,
+                        products=[],
+                        products_found=0,
+                        outfits=[],
+                        metadata={
+                            "error_handled": True,
+                            "fallback": True
+                        }
+                    )
+                except:
+                    # Ultimate fallback
+                    pass
+                
+                # Fall through to legacy system
+        
+        # ============================================================
+        # LEGACY SYSTEM (Original implementation)
+        # ============================================================
+        
         # 0. Load Memory & DNA
         user_data = await memory_service.get_user_memory(request.userId, request.userEmail, request.chatId)
         memory = user_data.get("memory")
@@ -243,8 +336,25 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks)
                 logger.warning(f"Intelligent search failed, falling back to basic: {e}")
                 # Fall through to basic search
         
-        # 4. FALLBACK: Basic Search (Original behavior)
-        products = await search_orchestrator.hybrid_search(request.message)
+        # 4. FALLBACK: Basic Search (Original behavior) - WITH GENDER FILTERING
+        # Extract gender from user memory for fallback filtering
+        try:
+            user_data = await memory_service.get_user_memory(request.userId, request.userEmail, request.chatId)
+            user_gender = user_data.get("memory", {}).get("long_term", {}).get("gender")
+            
+            # Apply basic gender filtering to fallback search
+            mandatory_filters = {}
+            if user_gender:
+                mandatory_filters["gender"] = user_gender
+                logger.info(f"[Fallback] Applying gender filter: {user_gender}")
+            
+            products = await search_orchestrator.hybrid_search(
+                request.message, 
+                mandatory_filters=mandatory_filters
+            )
+        except Exception as fallback_error:
+            logger.error(f"[Fallback] Even fallback search failed: {fallback_error}")
+            products = []
         
         final_text = await llm_service.generate_response(request.message, products, intent, memory, context)
         

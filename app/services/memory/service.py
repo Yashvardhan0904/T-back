@@ -47,7 +47,8 @@ class MemoryService:
                     for m in msgs:
                         session_history.append({
                             "role": m.get("role", "user"),
-                            "content": m.get("content", "")
+                            "content": m.get("content", ""),
+                            "product_ids": m.get("product_ids", [])
                         })
                     logger.info(f"Loaded {len(session_history)} messages from session {chat_id}")
                 else:
@@ -60,7 +61,13 @@ class MemoryService:
             try:
                 context = await db.aicontexts.find_one(dna_query, sort=[("lastUpdated", -1)])
                 if context:
-                    session_history = context.get("conversationHistory", [])
+                    history = context.get("conversationHistory", [])
+                    for m in history:
+                        session_history.append({
+                            "role": m.get("role", "user"),
+                            "content": m.get("content", ""),
+                            "product_ids": m.get("product_ids", [])
+                        })
                     logger.info(f"Fallback: Loaded {len(session_history)} messages from AIContext")
             except Exception as e:
                 logger.error(f"Error fetching AIContext: {e}")
@@ -70,7 +77,7 @@ class MemoryService:
             "context": {"conversationHistory": session_history}
         }
 
-    async def save_interaction(self, user_id: str, email: str, role: str, content: str, intent: str = None):
+    async def save_interaction(self, user_id: str, email: str, role: str, content: str, intent: str = None, products: list = None):
         """
         Appends a new turn to the AIContext.
         """
@@ -86,6 +93,11 @@ class MemoryService:
             "content": content,
             "timestamp": datetime.utcnow()
         }
+        
+        # Save product IDs if present (for exclusion/rejection handling)
+        if products:
+            new_turn["product_ids"] = [str(p.get("id") or p.get("_id")) for p in products if p.get("id") or p.get("_id")]
+            new_turn["product_names"] = [p.get("name") for p in products if p.get("name")]
 
         try:
             # Update history and lastUpdated
@@ -122,7 +134,10 @@ class MemoryService:
         - gender: (e.g. "male", "female", "non-binary")
         - style_identity: (e.g. "masculine", "feminine", "androgynous")
         - style_fit: (e.g. "oversized", "slim")
-        - vibe: (e.g. "streetwear", "minimalist")
+        - vibe: (e.g. "streetwear", "minimalist", "classic", "trendy", "ethnic", "luxury")
+        - design_preference: (e.g. "loud", "printed", "clean", "simple", "plain", "solid")
+        - size: (string like "M", "L", "XL", "32", "UK 9")
+        - shoe_size: (string/number)
         - nickname: (string, the name user wants to be called)
 
         Rules:
@@ -130,8 +145,10 @@ class MemoryService:
         2. If user says "I am a boy/man/guy", set gender="male", style_identity="masculine".
         3. If user says "I am a girl/woman", set gender="female", style_identity="feminine".
         4. If user says "Don't call me X" or "Call me Y", set nickname.
-        5. NEVER set nickname to Brand names (Trendora, etc).
-        6. Use null for fields with no new evidence.
+        5. Vibe mapping: "minimal" -> "minimalist", "shadi/ethnic/traditonal" -> "ethnic".
+        6. Design mapping: "printed/graphic/loud" -> "loud", "plain/solid/minimal" -> "clean".
+        7. NEVER set nickname to Brand names (Trendora, etc).
+        8. Use null for fields with no new evidence.
         """
 
         try:
@@ -148,6 +165,9 @@ class MemoryService:
             if data.get("style_identity"): updates["style.identity"] = data["style_identity"]
             if data.get("style_fit"): updates["style.fit"] = data["style_fit"]
             if data.get("vibe"): updates["style.vibe"] = data["vibe"]
+            if data.get("design_preference"): updates["style.design_preference"] = data["design_preference"]
+            if data.get("size"): updates["physical.size"] = data["size"]
+            if data.get("shoe_size"): updates["physical.shoeSize"] = data["shoe_size"]
             if data.get("nickname"): updates["userName"] = data["nickname"]
 
             if updates:

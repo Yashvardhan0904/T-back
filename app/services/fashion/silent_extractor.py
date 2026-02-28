@@ -45,6 +45,10 @@ class SilentExtractor:
         8. **rejectedColors**: array of colors they avoid (look for: "not a fan of red", "hate pink")
         9. **fit**: slim/regular/oversized preference
         10. **bodyShape**: ectoSlim/mesoAthletic/endoRound (look for body type mentions)
+        11. **size**: S/M/L/XL/XXL/XS (look for: "I'm a medium", "size M", "large fits me", "I wear L")
+        12. **shoeSize**: numeric shoe size (look for: "size 9", "UK 10", "42 EU", "I wear 8")
+        13. **likes**: array of {{item, reason}} - things user explicitly likes and why
+        14. **dislikes**: array of {{item, reason}} - things user explicitly dislikes and why
         
         Recent Context:
         {context}
@@ -61,6 +65,8 @@ class SilentExtractor:
         - "I'm a tall guy, about 6 feet" → {{"gender": "male", "heightCm": 183}}
         - "I'm dusky and love blue" → {{"skinTone": 0.6, "likedColors": ["blue"]}}
         - "Just want something simple today" → {{"riskTolerance": 0.2}}
+        - "I'm a medium, size 9 shoes" → {{"size": "M", "shoeSize": 9}}
+        - "I hate oversized stuff, looks baggy on me" → {{"dislikes": [{{"item": "oversized fits", "reason": "looks baggy"}}]}}
         """
         
         try:
@@ -114,7 +120,9 @@ class SilentExtractor:
                 "vibe": "style.vibe",
                 "riskTolerance": "psychology.riskTolerance",
                 "fit": "style.fit",
-                "bodyShape": "physical.bodyShape"
+                "bodyShape": "physical.bodyShape",
+                "size": "physical.size",  # NEW: clothing size
+                "shoeSize": "physical.shoeSize"  # NEW: shoe size
             }
             
             for key, field_path in field_mapping.items():
@@ -127,6 +135,15 @@ class SilentExtractor:
             
             if "rejectedColors" in insights:
                 update.setdefault("$addToSet", {})["revealed.rejectedColors"] = {"$each": insights["rejectedColors"]}
+            
+            # NEW: Handle likes and dislikes arrays
+            if "likes" in insights and isinstance(insights["likes"], list):
+                update.setdefault("$addToSet", {})["revealed.likes"] = {"$each": insights["likes"]}
+                logger.info(f"[SilentExtractor] Saving likes: {insights['likes']}")
+            
+            if "dislikes" in insights and isinstance(insights["dislikes"], list):
+                update.setdefault("$addToSet", {})["revealed.dislikes"] = {"$each": insights["dislikes"]}
+                logger.info(f"[SilentExtractor] Saving dislikes: {insights['dislikes']}")
             
             # Upsert to UserMemory
             query = {"userEmail": email} if email else {"userId": user_id}

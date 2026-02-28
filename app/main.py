@@ -19,7 +19,7 @@ async def startup_event():
     global settings
     settings = get_settings()
 
-    logger.error("USING MONGODB_URI = %s", settings.MONGODB_URI)
+    logger.info("Trendora AI Orchestrator starting up...")
 
     # Update app metadata AFTER settings load
     app.title = settings.PROJECT_NAME

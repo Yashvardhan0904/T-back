@@ -13,11 +13,13 @@ db = MongoDB()
 
 async def connect_to_mongo():
     db.client = AsyncIOMotorClient(settings.MONGODB_URI)
-    db.db = db.client[settings.DB_NAME]
+    # Use Yashvardhan database (override DB_NAME if it's set to admin)
+    db_name = settings.DB_NAME if settings.DB_NAME != "admin" else "Yashvardhan"
+    db.db = db.client[db_name]
     try:
         # Verify connection
         await db.client.admin.command('ping')
-        logger.info("✅ Connected to MongoDB: %s", settings.DB_NAME)
+        logger.info("✅ Connected to MongoDB: %s", db_name)
     except Exception as e:
         logger.error("❌ Could not connect to MongoDB: %s", e)
         raise e
